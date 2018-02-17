@@ -1,4 +1,11 @@
 #!/bin/bash
+#  _           _        _ _                   _     _ _ _    
+# (_)_ __  ___| |_ __ _| | |      _ __  _   _| |__ | (_) | __
+# | | '_ \/ __| __/ _` | | |_____| '_ \| | | | '_ \| | | |/ /
+# | | | | \__ \ || (_| | | |_____| |_) | |_| | |_) | | |   < 
+# |_|_| |_|___/\__\__,_|_|_|     | .__/ \__,_|_.__/|_|_|_|\_\
+#                                |_|                         
+
 # Global variables definition
 APPLICATION="Publik (Entrouvert) installation"
 STDOUT="stdout.log"
@@ -10,6 +17,14 @@ declare -a PROXY_SETTINGS
 
 # Check requirements for this script, exits if any requirement is not met.
 function check_requirements() {
+    # Checks the presence of the sudo utility
+    which "sudo" > /dev/null
+    if [ $? -ne 0 ]
+    then
+        echo "This script requires the sudo command."
+        exit 10
+    fi
+
     # Checks the presence of the dialog utility
     which "dialog" > /dev/null
     if [ $? -ne 0 ]
@@ -267,11 +282,60 @@ function get_proxy_settings() {
     if [[ $http_proxy =~ $re ]]
     then
         printf "%s\n%s\n%s\n%s\n" \
-               "${BASH_REMATCH[1]}" \
                "${BASH_REMATCH[2]}" \
                "${BASH_REMATCH[3]}" \
-               "${BASH_REMATCH[5]}"
+               "${BASH_REMATCH[4]}" \
+               "${BASH_REMATCH[6]}"
     fi
+}
+
+# Set proxy settings.
+#
+# This function sets and exports http_proxy, https_proxy and all_proxy
+# environment variables.
+#
+# Arguments:
+# - 1: user name (optional)
+# - 2: password (optional if user name is empty)
+# - 3: url
+# - 4: port (optional)
+function set_proxy_settings() {
+    local user="$1"
+    local password="$2"
+    local url="$3"
+    local port="$4"
+    local proxy_url=""
+
+    if [ "$user" ]
+    then
+        proxy_url="$user:$password@"
+    fi
+
+    if [ "$port" ]
+    then
+        proxy_url="$proxy_url$url:$port/"
+    else
+        proxy_url="$proxy_url$url/"
+    fi
+
+    export http_proxy="http://$proxy_url"
+    export https_proxy="https://$proxy_url"
+    export all_proxy="https://$proxy_url"
+}
+
+# Show introduction with a yes/no dialog allowing the user to abort the script.
+function show_introduction() {
+    run_dialog --yesno \
+        "This script will install Publik (Entr'ouvert).
+
+The following packages will be installed, if needed, in your system:
+- Git
+- Python VirtualEnv
+- Ruby + Ruby dev
+- Sass
+
+Do you wish to continue?" \
+        0 0
 }
 
 # Since this command contains a pipe, it can not be used directly, by the
@@ -280,17 +344,29 @@ function install_new_pip() {
     wget -O - https://bootstrap.pypa.io/get-pip.py | python
 }
 
+#  __  __       _                                                   
+# |  \/  | __ _(_)_ __    _ __  _ __ ___   __ _ _ __ __ _ _ __ ___  
+# | |\/| |/ _` | | '_ \  | '_ \| '__/ _ \ / _` | '__/ _` | '_ ` _ \ 
+# | |  | | (_| | | | | | | |_) | | | (_) | (_| | | | (_| | | | | | |
+# |_|  |_|\__,_|_|_| |_| | .__/|_|  \___/ \__, |_|  \__,_|_| |_| |_|
+#                        |_|              |___/                     
+
 check_requirements
+
+show_introduction
 
 ask_password
 
 # Ask for proxy settings if the http_proxy variable has been set
 if [ "$http_proxy" ]
 then
-    get_proxy_settings
+    readarray -t DIALOG_VALUES < <(get_proxy_settings)
     ask_proxy
-    set_proxy_settings
-    echo "${DIALOG_VALUES[@]}"
+    set_proxy_settings \
+        "${DIALOG_VALUES[0]}" \
+        "${DIALOG_VALUES[1]}" \
+        "${DIALOG_VALUES[2]}" \
+        "${DIALOG_VALUES[3]}"
 fi
 
 ask_publik_directory
