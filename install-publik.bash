@@ -101,10 +101,10 @@ function run_sudo() {
     local progression="$2"
     shift 2
 
-    printf "%s\n" "$SUDO_PASSWORD" | \
-        LANG= sudo -S "$@" 2>> $STDERR | \
-        $progression | \
-        run_dialog --gauge "$title" 0 80 0
+    printf "%s\n" "$SUDO_PASSWORD" \
+        | LANG= sudo -S "$@" 2>> $STDERR \
+        | $progression \
+        | run_dialog --gauge "$title" 0 80 0
 
     if [ "${PIPESTATUS[1]}" -ne 0 ]
     then
@@ -226,42 +226,55 @@ function gem_sass_progression() {
     echo 100
 }
 
-# A progression filter for pip install -r requirements.txt.
+# A progression filter for pip install -e .
 # This functions is meant to be used by the run and run_sudo functions.
-function combo_requirements_progression() {
-    sed --quiet --unbuffered '
-        /Collecting Django/a3
-        /Collecting django-ckeditor/a6
-        /Collecting gadjo/a9
-        /Collecting feedparser/a12
-        /Collecting django-jsonfield/a15
-        /Collecting requests/a18
-        /Collecting XStatic-ChartNew/a21
-        /Collecting XStatic-Leaflet/a24
-        /Collecting XStatic_JosefinSans/a27
-        /Collecting XStatic_OpenSans/a30
-        /Collecting XStatic_roboto-fontface/a33
-        /Collecting eopayment/a36
-        /Collecting python-dateutil/a39
-        /Collecting djangorestframework/a42
-        /Collecting django-haystack/a45
-        /Collecting whoosh/a48
-        /Collecting sorl-thumbnail/a51
-        /Collecting XStatic/a54
-        /Collecting XStatic_Font_Awesome/a57
-        /Collecting XStatic_jQuery/a60
-        /Collecting XStatic_jquery_ui/a63
-        /Collecting idna/a66
-        /Collecting urllib3/a69
-        /Collecting certifi/a72
-        /Collecting chardet/a75
-        /Collecting pycrypto/a78
-        /Collecting six/a81
-        /Successfully built gadjo/a84
-        /Installing collected packages/a87
-        /Successfully installed/a90
-    '
+function pip_requirements_progression() {
+    local requirements
+    local counter
+    local req_count
+    local found
+
+    local re_start='^(Requirement already satisfied:|Collecting) '
+    local re_end='[ ,<>=]'
+
+    readarray -t requirements < <(get_python_requirements "setup.py")
+    req_count="${#requirements[@]}"
+
+    while read line
+    do
+        found=$(
+            for requirement in "${requirements[@]}"
+            do
+                if [[ $line =~ $re_start$requirement$re_end ]]
+                then
+                    printf "x"
+                    break
+                fi
+            done
+        )
+
+        if [ "$found" = "x" ]
+        then
+            counter=$((counter + 1))
+            printf "%d\n" $((100 * counter / (req_count + 1) ))
+        fi
+    done
     echo 100
+}
+
+# Retrieve requirements from a setup.py file
+#
+# It outputs the list of requirements in reverse order to help differentiate,
+# for example, django from django-ckeditor.
+#
+# Arguments:
+# - 1: the path to a setup.py file
+function get_python_requirements() {
+    local setuppy="$1"
+    cat "$setuppy" \
+        | sed --quiet '/^ *install_requires/,/^ *\],/p' \
+        | grep --perl-regexp --only-matching "(?<=')[^ ,'<>=]+" \
+        | sort --reverse
 }
 
 # Retrieve proxy settings from the http_proxy environment variable.
@@ -399,6 +412,7 @@ run "Creating virtual environment in $PUBLIK_DIRECTORY" \
 cd "$PUBLIK_DIRECTORY"
 source bin/activate
 
+# Debian/Ubuntu has a very old version of pip, we need a more recent version!
 run "Retrieving a current version of pip" \
     get_pip_progression \
     install_new_pip
@@ -407,13 +421,25 @@ run "Cloning Combo repository in $PUBLIK_DIRECTORY/combo" \
     git_progression \
     git clone http://repos.entrouvert.org/combo.git
 
+# Adding STATIC_ROOT settings for ./manage.py collectstatic
+directory=$(readlink -e "$1")
+printf "\nSTATIC_ROOT = '%s'\n" \
+    "$(readlink -e "$PUBLIK_DIRECTORY")/static" \
+    >> combo/combo/settings.py
+
 cd combo
 run "Installing Combo requirements" \
-    combo_requirements_progression \
-    pip install -r requirements.txt
+    pip_requirements_progression \
+    pip install -e .
 cd ..
 
 run "Cloning WCS repository in $PUBLIK_DIRECTORY/wcs" \
     git_progression \
     git clone http://repos.entrouvert.org/wcs.git
+
+cd wcs
+run "Installing WCS requirements" \
+    pip_requirements_progression \
+    pip install -e .
+cd ..
 
