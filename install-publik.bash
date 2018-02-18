@@ -12,6 +12,9 @@ STDOUT="stdout.log"
 STDERR="stderr.log"
 SUDO_PASSWORD=""
 PUBLIK_DIRECTORY="publik-env"
+SUP_USER="admin"
+SUP_EMAIL="admin@example.com"
+SUP_PASSWORD="admin"
 declare -a DIALOG_VALUES
 declare -a PROXY_SETTINGS
 
@@ -139,6 +142,19 @@ function ask_publik_directory() {
     fi
 }
 
+# Ask the user for the super user settings.
+#
+# Global variables:
+# - DIALOG_VALUES: contains the 3 default values (user, email, password).
+#                  On return, it will contain the values set by the user.
+function ask_superuser() {
+    run_dialog \
+        --form "Combo Superuser settings" 0 0 4 \
+            "User"     1 1 "${DIALOG_VALUES[0]}" 1 10 20 0 \
+            "Email"    2 1 "${DIALOG_VALUES[1]}" 2 10 50 0 \
+            "Password" 3 1 "${DIALOG_VALUES[2]}" 3 10 20 0
+}
+
 # Ask the user for the proxy settings.
 #
 # Global variables:
@@ -222,6 +238,18 @@ function gem_sass_progression() {
         /Installing ri documentation for sass-[^l]/a80
         /Installing ri documentation for sass-listen/a88
         /gems installed/a96
+    '
+    echo 100
+}
+
+# A progression filter for ./manage.py createsuperuser.
+# This functions is meant to be used by the run and run_sudo functions.
+function manage_createsuperuser_progression() {
+    sed --quiet --unbuffered '
+        /^Username/a20
+        /^Email address/a40
+        /^Password:/a60
+        /^Password (again):/a80
     '
     echo 100
 }
@@ -411,6 +439,22 @@ function install_new_pip() {
     wget -O - https://bootstrap.pypa.io/get-pip.py | python
 }
 
+# Create the Combo super user
+#
+# Global variables:
+# - SUP_USER: the super user name
+# - SUP_EMAIL: the super user email
+# - SUP_PASSWORD: the super user password
+function create_superuser() {
+    local create_superuser="./manage.py createsuperuser"
+
+    for input in "$SUP_USER" "$SUP_EMAIL" "$SUP_PASSWORD" "$SUP_PASSWORD"
+    do
+        sleep 1
+        printf -- "%s\n" "$input"
+    done | script --quiet --return --command "$create_superuser" /dev/null
+}
+
 #  __  __       _                                                   
 # |  \/  | __ _(_)_ __    _ __  _ __ ___   __ _ _ __ __ _ _ __ ___  
 # | |\/| |/ _` | | '_ \  | '_ \| '__/ _ \ / _` | '__/ _` | '_ ` _ \ 
@@ -423,6 +467,13 @@ check_requirements
 show_introduction
 
 ask_password
+
+# Ask for superuser settings
+DIALOG_VALUES=("$SUP_USER" "$SUP_EMAIL" "$SUP_PASSWORD")
+ask_superuser
+SUP_USER="${DIALOG_VALUES[0]}"
+SUP_EMAIL="${DIALOG_VALUES[1]}"
+SUP_PASSWORD="${DIALOG_VALUES[2]}"
 
 # Ask for proxy settings if the http_proxy variable has been set
 if [ "$http_proxy" ]
@@ -501,5 +552,11 @@ cd combo
 run "Initializing the database (manage.py migrate)" \
     manage_migrate_progression \
     ./manage.py migrate
+cd ..
+
+cd combo
+run "Creating superuser (manage.py createsuperuser)" \
+    manage_createsuperuser_progression \
+    create_superuser
 cd ..
 
