@@ -262,6 +262,60 @@ function pip_requirements_progression() {
     echo 100
 }
 
+# A progression filter for ./manage.py migrate.
+# This functions is meant to be used by the run and run_sudo functions.
+function manage_migrate_progression() {
+    local re_start='^ *Applying '
+    local re_end='\.\.\. OK$'
+
+    readarray -t steps < <(manage_migrate_dependencies | sort | uniq)
+    step_count="${#steps[@]}"
+
+    while read line
+    do
+        found=$(
+            for step in "${steps[@]}"
+            do
+                if [[ $line =~ $re_start$step$re_end ]]
+                then
+                    printf "x"
+                    break
+                fi
+            done
+        )
+
+        if [ "$found" = "x" ]
+        then
+            counter=$((counter + 1))
+            printf "%d\n" $((100 * counter / (step_count + 1) ))
+        fi
+    done
+    echo 100
+}
+
+# Find all migration steps that ./manage.py migrate will go through
+function manage_migrate_dependencies() {
+    local filter_files='/migrations/[0-9][0-9][0-9][0-9]_'
+    local path_to_id="s/^.*\/\([^/]*\)\/migrations\/\([^/]*\)\.py$/\1.\2/gp"
+    local dep_to_id="
+        /^ *dependencies *= *\\[/,/^ *\\]$/{
+            s/^ *('\([^']*\)'.*'\([^']*\)').*$/\1.\2/gp
+        }
+    "
+
+    # Retrieve IDs from dependencies inside migration files
+    find . -name "*.py" \
+        | grep "$filter_files" \
+        | xargs cat -- \
+        | sed --quiet "$dep_to_id"
+
+    # Retrieve IDs from migration files of the current application
+    find . -name "*.py" | grep "$filter_files" | sed --quiet "$path_to_id"
+
+    # Retrieve IDs from frameworks and other base packages
+    find ../lib -name "*.py" | grep "$filter_files" | sed --quiet "$path_to_id"
+}
+
 # Retrieve requirements from a setup.py file
 #
 # It outputs the list of requirements in reverse order to help differentiate,
@@ -441,5 +495,11 @@ cd wcs
 run "Installing WCS requirements" \
     pip_requirements_progression \
     pip install -e .
+cd ..
+
+cd combo
+run "Initializing the database (manage.py migrate)" \
+    manage_migrate_progression \
+    ./manage.py migrate
 cd ..
 
