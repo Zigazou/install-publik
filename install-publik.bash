@@ -527,9 +527,8 @@ run "Cloning Combo repository in $PUBLIK_DIRECTORY/combo" \
     git clone http://repos.entrouvert.org/combo.git
 
 # Adding STATIC_ROOT settings for ./manage.py collectstatic
-directory=$(readlink -e "$1")
 printf "\nSTATIC_ROOT = '%s'\n" \
-    "$(readlink -e "$PUBLIK_DIRECTORY")/static" \
+    "$(readlink -e "../$PUBLIK_DIRECTORY")/static" \
     >> combo/combo/settings.py
 
 cd combo
