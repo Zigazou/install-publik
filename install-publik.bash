@@ -258,9 +258,10 @@ function manage_createsuperuser_progression() {
 # This functions is meant to be used by the run and run_sudo functions.
 function pip_requirements_progression() {
     local requirements
-    local counter
-    local req_count
-    local found
+    local counter=0
+    local req_count=0
+    local found=""
+    local line=""
 
     local re_start='^(Requirement already satisfied:|Collecting) '
     local re_end='[ ,<>=]'
@@ -290,11 +291,34 @@ function pip_requirements_progression() {
     echo 100
 }
 
+# A progression filter for ./manage.py collectstatic.
+# This functions is meant to be used by the run and run_sudo functions.
+function manage_collectstatic_progression() {
+    local file_count=$(find ../lib -type f -regex '.*/x?static/.*' | wc --lines)
+    local counter=0
+    local line=""
+
+    while read line
+    do
+        if [[ $line =~ ^Copying ]]
+        then
+            counter=$((counter + 1))
+            printf "%d\n" $((100 * counter / (file_count + 1) ))
+        fi
+    done
+    echo 100
+}
+
 # A progression filter for ./manage.py migrate.
 # This functions is meant to be used by the run and run_sudo functions.
 function manage_migrate_progression() {
     local re_start='^ *Applying '
     local re_end='\.\.\. OK$'
+    local counter=0
+    local found=""
+    local step_count=0
+    local step=""
+    local line=""
 
     readarray -t steps < <(manage_migrate_dependencies | sort | uniq)
     step_count="${#steps[@]}"
@@ -323,7 +347,7 @@ function manage_migrate_progression() {
 
 # Find all migration steps that ./manage.py migrate will go through
 function manage_migrate_dependencies() {
-    local filter_files='/migrations/[0-9][0-9][0-9][0-9]_'
+    local filter_files='.*/migrations/[0-9][0-9][0-9][0-9]_.*'
     local path_to_id="s/^.*\/\([^/]*\)\/migrations\/\([^/]*\)\.py$/\1.\2/gp"
     local dep_to_id="
         /^ *dependencies *= *\\[/,/^ *\\]$/{
@@ -332,16 +356,15 @@ function manage_migrate_dependencies() {
     "
 
     # Retrieve IDs from dependencies inside migration files
-    find . -name "*.py" \
-        | grep "$filter_files" \
+    find . -name "*.py" -regex "$filter_files" \
         | xargs cat -- \
         | sed --quiet "$dep_to_id"
 
     # Retrieve IDs from migration files of the current application
-    find . -name "*.py" | grep "$filter_files" | sed --quiet "$path_to_id"
+    find . -name "*.py" -regex "$filter_files" | sed --quiet "$path_to_id"
 
     # Retrieve IDs from frameworks and other base packages
-    find ../lib -name "*.py" | grep "$filter_files" | sed --quiet "$path_to_id"
+    find ../lib -name "*.py" -regex "$filter_files" | sed --quiet "$path_to_id"
 }
 
 # Retrieve requirements from a setup.py file
@@ -557,5 +580,11 @@ cd combo
 run "Creating superuser (manage.py createsuperuser)" \
     manage_createsuperuser_progression \
     create_superuser
+cd ..
+
+cd combo
+run "Collecting static files (manage.py collectstatic)" \
+    manage_collectstatic_progression \
+    ./manage.py collectstatic
 cd ..
 
