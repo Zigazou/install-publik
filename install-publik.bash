@@ -560,31 +560,55 @@ run "Installing Combo requirements" \
     pip install -e .
 cd ..
 
+cd combo
+run "Initializing the Combo database (manage.py migrate)" \
+    manage_migrate_progression \
+    ./manage.py migrate
+cd ..
+
+cd combo
+run "Creating Combo superuser (manage.py createsuperuser)" \
+    manage_createsuperuser_progression \
+    create_superuser
+cd ..
+
+cd combo
+run "Collecting Combo static files (manage.py collectstatic)" \
+    manage_collectstatic_progression \
+    ./manage.py collectstatic
+cd ..
+
 run "Cloning WCS repository in $PUBLIK_DIRECTORY/wcs" \
     git_progression \
     git clone http://repos.entrouvert.org/wcs.git
+
+# Adding APP_DIR and DATA_DIR settings to Defaults.py
+# TODO: rewrite with a search and replace
+printf "\nAPP_DIR = '%s'\nDATA_DIR = '%s'\n" \
+    "$(readlink -e "../$PUBLIK_DIRECTORY")/wcs/wcs" \
+    "$(readlink -e "../$PUBLIK_DIRECTORY")/share/wcs" \
+    >> wcs/wcs/Defaults.py
+
+# Adding STATIC_ROOT settings for ./manage.py collectstatic
+# TODO: rewrite with a search and replace
+printf "\nSTATIC_ROOT = '%s'\nADMINS = (('%s', '%s'))\nMANAGERS = ADMINS\n" \
+    "$(readlink -e "../$PUBLIK_DIRECTORY")/static" \
+    "$SUP_USER" \
+    "$SUP_EMAIL" \
+    >> wcs/wcs/settings.py
+
+# Force Quixote version since latest version only supports Python 3
+run "Installing Quixote 2.9.1" \
+    pip_requirements_progression \
+    pip install quixote==2.9.1
+
+# Install vobject
+run "Installing vobject" \
+    pip_requirements_progression \
+    pip install vobject
 
 cd wcs
 run "Installing WCS requirements" \
     pip_requirements_progression \
     pip install -e .
 cd ..
-
-cd combo
-run "Initializing the database (manage.py migrate)" \
-    manage_migrate_progression \
-    ./manage.py migrate
-cd ..
-
-cd combo
-run "Creating superuser (manage.py createsuperuser)" \
-    manage_createsuperuser_progression \
-    create_superuser
-cd ..
-
-cd combo
-run "Collecting static files (manage.py collectstatic)" \
-    manage_collectstatic_progression \
-    ./manage.py collectstatic
-cd ..
-
